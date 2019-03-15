@@ -1,0 +1,78 @@
+#! /bin/bash
+
+# Copyright 2018 Two Sigma Investments, LP
+
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+
+#     http://www.apache.org/licenses/LICENSE-2.0
+
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# Test the ts_java_exclude_library Starlark rule.
+
+set -o errexit -o noglob -o nounset -o pipefail
+
+# Create two versions of Dependency and RuntimeDependency.
+
+create_jar() {
+    local source=$1
+    local java_class=$2
+    local jar_file=$3
+
+    cp "$source" "$java_class".java
+    javac "$java_class".java
+    (cd .. && jar cf exclude_test/"$jar_file" exclude_test/"$java_class".class)
+}
+
+create_jar unwanted-Dependency.java Dependency unwanted_dep.jar
+create_jar wanted-Dependency.java Dependency wanted_dep.jar
+
+create_jar unwanted-RuntimeDependency.java RuntimeDependency unwanted_runtime_dep.jar
+create_jar wanted-RuntimeDependency.java RuntimeDependency wanted_runtime_dep.jar
+
+cp ../ts_java_exclude.bzl .
+
+# Bazel build binary and exclude_binary.
+
+bazel build :binary :exclude_binary
+
+# Verify that binary includes the unwanted versions of Dependency and
+# RuntimeDependency.
+
+if bazel-bin/binary; then
+   echo "binary succeeded when it should have failed" 1>&2
+   exit 1
+else
+    status=$?
+    if [ $status != 1 ]; then
+        echo "binary failed with wrong status: $status" 1>&2
+        exit 1
+    fi
+fi
+
+# Verify that exclude_binary includes the wanted versions of Dependency and
+# RuntimeDependency.
+
+if ! bazel-bin/exclude_binary; then
+    status=$?
+    echo "$program: exclude_binary failed when it should have succeeded" 1>&2
+    echo "exclude_binary exit status: $status" 1>&2
+    exit 1
+fi
+
+# Clean up.
+
+rm -f \
+    bazel-bin bazel-exclude_test bazel-genfiles bazel-out bazel-testlogs \
+    ts_java_exclude.bzl \
+    Dependency.class RuntimeDependency.class \
+    unwanted_dep.jar unwanted_runtime_dep.jar \
+    wanted_dep.jar wanted_runtime_dep.jar
+
+exit 0
