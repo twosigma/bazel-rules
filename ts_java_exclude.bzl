@@ -80,30 +80,50 @@ def _create_exclude_providers(
     new_providers = []
     used_exclude_labels = {}
     for provider in providers:
-        # Filter the transitive runtime and compile time jars.  Keep track of
-        # which exclude labels we used.
-        runtime_jars = []
+        # Filter the transitive runtime jars.  Keep track of which exclude
+        # labels we used.
+        transitive_runtime_jars = []
         for jar in provider.transitive_runtime_jars.to_list():
             if jar in runtime_excludes:
                 used_exclude_labels[exclude_label_for_jar[jar]] = True
             else:
-                runtime_jars.append(jar)
-        compile_time_jars = []
+                transitive_runtime_jars.append(jar)
+
+        # Convert the filtered runtime jars into providers.
+        transitive_runtime_providers = [
+            JavaInfo(output_jar = jar, compile_jar = jar)
+            for jar in transitive_runtime_jars
+        ]
+        runtime_output_providers = [
+            JavaInfo(output_jar = jar, compile_jar = jar, deps = transitive_runtime_providers)
+            for jar in provider.runtime_output_jars
+        ]
+
+        # Filter the transitive compile time jars.  Keep track of which exclude
+        # labels we used.
+        transtive_compile_time_jars = []
         for jar in provider.transitive_compile_time_jars.to_list():
             if jar in compile_time_excludes:
                 used_exclude_labels[exclude_label_for_jar[jar]] = True
             else:
-                compile_time_jars.append(jar)
+                transtive_compile_time_jars.append(jar)
 
-        new_providers.append(
-            java_common.create_provider(
-                use_ijar = False,
-                compile_time_jars = provider.compile_jars,
-                runtime_jars = provider.runtime_output_jars,
-                transitive_compile_time_jars = compile_time_jars,
-                transitive_runtime_jars = runtime_jars,
-            ),
-        )
+        # Convert the filtered compile time jars into providers.
+        transitive_compile_time_providers = [
+            JavaInfo(output_jar = jar, compile_jar = jar, neverlink = True)
+            for jar in transtive_compile_time_jars
+        ]
+        compile_providers = [
+            JavaInfo(
+                output_jar = jar,
+                compile_jar = jar,
+                neverlink = True,
+                deps = transitive_compile_time_providers,
+            )
+            for jar in provider.compile_jars.to_list()
+        ]
+
+        new_providers.append(java_common.merge(runtime_output_providers + compile_providers))
 
     return new_providers, used_exclude_labels
 
